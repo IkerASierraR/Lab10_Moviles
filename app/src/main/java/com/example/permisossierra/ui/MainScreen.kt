@@ -7,7 +7,9 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
+import android.graphics.Bitmap
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,10 +23,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
@@ -50,6 +56,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -57,8 +66,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.permisossierra.fetures.AudioHelper
+import com.example.permisossierra.fetures.CalendarHelper
+import com.example.permisossierra.fetures.CallHelper
+import com.example.permisossierra.fetures.CameraHelper
 import com.example.permisossierra.fetures.ContactsHelper
 import com.example.permisossierra.fetures.LocationHelper
+import com.example.permisossierra.fetures.NotificationHelper
 import com.example.permisossierra.permissions.PermissionStatus
 import com.example.permisossierra.ui.components.PermissionCard
 
@@ -66,6 +79,10 @@ private const val PREFS_NAME = "permisos_app_prefs"
 private const val KEY_CONTACTS_REQUESTED = "contacts_requested"
 private const val KEY_LOCATION_REQUESTED = "location_requested"
 private const val KEY_AUDIO_REQUESTED = "audio_requested"
+private const val KEY_CAMERA_REQUESTED = "camera_requested"
+private const val KEY_NOTIFICATIONS_REQUESTED = "notifications_requested"
+private const val KEY_CALENDAR_REQUESTED = "calendar_requested"
+private const val KEY_CALL_REQUESTED = "call_requested"
 
 /**
  * Pantalla principal de "Voice & Context Memo".
@@ -84,11 +101,19 @@ fun MainScreen() {
     var contactsRequested by remember { mutableStateOf(prefs.getBoolean(KEY_CONTACTS_REQUESTED, false)) }
     var locationRequested by remember { mutableStateOf(prefs.getBoolean(KEY_LOCATION_REQUESTED, false)) }
     var audioRequested by remember { mutableStateOf(prefs.getBoolean(KEY_AUDIO_REQUESTED, false)) }
+    var cameraRequested by remember { mutableStateOf(prefs.getBoolean(KEY_CAMERA_REQUESTED, false)) }
+    var notificationsRequested by remember { mutableStateOf(prefs.getBoolean(KEY_NOTIFICATIONS_REQUESTED, false)) }
+    var calendarRequested by remember { mutableStateOf(prefs.getBoolean(KEY_CALENDAR_REQUESTED, false)) }
+    var callRequested by remember { mutableStateOf(prefs.getBoolean(KEY_CALL_REQUESTED, false)) }
 
     // Evaluación dinámica de los 4 estados de permisos
     var contactsStatus by remember { mutableStateOf(PermissionStatus.evaluate(context, Manifest.permission.READ_CONTACTS, contactsRequested)) }
     var locationStatus by remember { mutableStateOf(PermissionStatus.evaluate(context, Manifest.permission.ACCESS_FINE_LOCATION, locationRequested)) }
     var audioStatus by remember { mutableStateOf(PermissionStatus.evaluate(context, Manifest.permission.RECORD_AUDIO, audioRequested)) }
+    var cameraStatus by remember { mutableStateOf(PermissionStatus.evaluate(context, Manifest.permission.CAMERA, cameraRequested)) }
+    var notificationsStatus by remember { mutableStateOf(PermissionStatus.evaluate(context, Manifest.permission.POST_NOTIFICATIONS, notificationsRequested)) }
+    var calendarStatus by remember { mutableStateOf(PermissionStatus.evaluate(context, Manifest.permission.READ_CALENDAR, calendarRequested)) }
+    var callStatus by remember { mutableStateOf(PermissionStatus.evaluate(context, Manifest.permission.CALL_PHONE, callRequested)) }
 
     // Campo de nota de texto
     var memoText by remember { mutableStateOf("Reunión de demostración sobre permisos en Android") }
@@ -97,6 +122,13 @@ fun MainScreen() {
     var contactsResult by remember { mutableStateOf("No se ha consultado ningún contacto aún.") }
     var locationResult by remember { mutableStateOf("No se han obtenido coordenadas GPS aún.") }
     var audioResult by remember { mutableStateOf("Sin nota de voz grabada.") }
+    var cameraResult by remember { mutableStateOf("No se ha capturado ninguna foto aún.") }
+    var notificationsResult by remember { mutableStateOf("No se ha enviado ningún recordatorio aún.") }
+    var calendarResult by remember { mutableStateOf("No se ha consultado el calendario aún.") }
+    var callResult by remember { mutableStateOf("No se ha realizado ninguna llamada aún.") }
+
+    var capturedPhoto by remember { mutableStateOf<Bitmap?>(null) }
+    var phoneNumber by remember { mutableStateOf("+52 55 1234 5678") }
 
     // Administrador de grabación y reproducción de audio
     val audioHelper = remember { AudioHelper(context) }
@@ -114,6 +146,10 @@ fun MainScreen() {
         contactsStatus = PermissionStatus.evaluate(context, Manifest.permission.READ_CONTACTS, contactsRequested)
         locationStatus = PermissionStatus.evaluate(context, Manifest.permission.ACCESS_FINE_LOCATION, locationRequested)
         audioStatus = PermissionStatus.evaluate(context, Manifest.permission.RECORD_AUDIO, audioRequested)
+        cameraStatus = PermissionStatus.evaluate(context, Manifest.permission.CAMERA, cameraRequested)
+        notificationsStatus = PermissionStatus.evaluate(context, Manifest.permission.POST_NOTIFICATIONS, notificationsRequested)
+        calendarStatus = PermissionStatus.evaluate(context, Manifest.permission.READ_CALENDAR, calendarRequested)
+        callStatus = PermissionStatus.evaluate(context, Manifest.permission.CALL_PHONE, callRequested)
     }
 
     // Registra que una solicitud ha sido lanzada
@@ -130,6 +166,22 @@ fun MainScreen() {
             Manifest.permission.RECORD_AUDIO -> {
                 audioRequested = true
                 prefs.edit().putBoolean(KEY_AUDIO_REQUESTED, true).apply()
+            }
+            Manifest.permission.CAMERA -> {
+                cameraRequested = true
+                prefs.edit().putBoolean(KEY_CAMERA_REQUESTED, true).apply()
+            }
+            Manifest.permission.POST_NOTIFICATIONS -> {
+                notificationsRequested = true
+                prefs.edit().putBoolean(KEY_NOTIFICATIONS_REQUESTED, true).apply()
+            }
+            Manifest.permission.READ_CALENDAR -> {
+                calendarRequested = true
+                prefs.edit().putBoolean(KEY_CALENDAR_REQUESTED, true).apply()
+            }
+            Manifest.permission.CALL_PHONE -> {
+                callRequested = true
+                prefs.edit().putBoolean(KEY_CALL_REQUESTED, true).apply()
             }
         }
         refreshPermissionStates()
@@ -169,6 +221,39 @@ fun MainScreen() {
         markRequested(Manifest.permission.RECORD_AUDIO)
     }
 
+    val requestCameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        markRequested(Manifest.permission.CAMERA)
+    }
+
+    val requestNotificationsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        markRequested(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    val requestCalendarLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        markRequested(Manifest.permission.READ_CALENDAR)
+    }
+
+    val requestCallLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        markRequested(Manifest.permission.CALL_PHONE)
+    }
+
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            capturedPhoto = bitmap
+        }
+        cameraResult = CameraHelper.describePhoto(context, bitmap)
+    }
+
     // Launcher múltiple para el botón "Activar Todo"
     val requestAllLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -176,6 +261,25 @@ fun MainScreen() {
         markRequested(Manifest.permission.READ_CONTACTS)
         markRequested(Manifest.permission.ACCESS_FINE_LOCATION)
         markRequested(Manifest.permission.RECORD_AUDIO)
+        markRequested(Manifest.permission.CAMERA)
+        markRequested(Manifest.permission.POST_NOTIFICATIONS)
+        markRequested(Manifest.permission.READ_CALENDAR)
+        markRequested(Manifest.permission.CALL_PHONE)
+    }
+
+    val launchPermissionRequest = { permission: String ->
+        when (permission) {
+            Manifest.permission.READ_CONTACTS -> requestContactsLauncher.launch(Manifest.permission.READ_CONTACTS)
+            Manifest.permission.ACCESS_FINE_LOCATION -> requestLocationLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+            Manifest.permission.RECORD_AUDIO -> requestAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            Manifest.permission.CAMERA -> requestCameraLauncher.launch(Manifest.permission.CAMERA)
+            Manifest.permission.POST_NOTIFICATIONS -> requestNotificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            Manifest.permission.READ_CALENDAR -> requestCalendarLauncher.launch(Manifest.permission.READ_CALENDAR)
+            Manifest.permission.CALL_PHONE -> requestCallLauncher.launch(Manifest.permission.CALL_PHONE)
+            else -> Unit
+        }
     }
 
     // Abre la configuración del sistema para la app en Ajustes
@@ -194,6 +298,10 @@ fun MainScreen() {
                 Manifest.permission.READ_CONTACTS -> contactsRequested
                 Manifest.permission.ACCESS_FINE_LOCATION -> locationRequested
                 Manifest.permission.RECORD_AUDIO -> audioRequested
+                Manifest.permission.CAMERA -> cameraRequested
+                Manifest.permission.POST_NOTIFICATIONS -> notificationsRequested
+                Manifest.permission.READ_CALENDAR -> calendarRequested
+                Manifest.permission.CALL_PHONE -> callRequested
                 else -> false
             }
         )
@@ -203,13 +311,7 @@ fun MainScreen() {
                 // Ya concedido
             }
             PermissionStatus.NOT_REQUESTED -> {
-                when (permission) {
-                    Manifest.permission.READ_CONTACTS -> requestContactsLauncher.launch(Manifest.permission.READ_CONTACTS)
-                    Manifest.permission.ACCESS_FINE_LOCATION -> requestLocationLauncher.launch(
-                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-                    )
-                    Manifest.permission.RECORD_AUDIO -> requestAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                }
+                launchPermissionRequest(permission)
             }
             PermissionStatus.RATIONALE_REQUIRED -> {
                 activeRationalePermission = permission
@@ -220,6 +322,14 @@ fun MainScreen() {
                         "La ubicación nos permite guardar las coordenadas GPS (Latitud y Longitud) junto con la nota."
                     Manifest.permission.RECORD_AUDIO ->
                         "El permiso de Micrófono es indispensable para grabar un audio explicativo de 3 segundos."
+                    Manifest.permission.CAMERA ->
+                        "La Cámara nos permite capturar una foto que acompañe a la nota como evidencia visual."
+                    Manifest.permission.POST_NOTIFICATIONS ->
+                        "Las Notificaciones nos permiten enviarte un recordatorio con el contenido de tu nota."
+                    Manifest.permission.READ_CALENDAR ->
+                        "Necesitamos acceso a tu Calendario para asociar tu próximo evento a la nota."
+                    Manifest.permission.CALL_PHONE ->
+                        "El permiso de Teléfono nos permite llamar directamente al contacto relacionado con la nota."
                     else -> "Se requiere el permiso para continuar."
                 }
             }
@@ -278,7 +388,11 @@ fun MainScreen() {
                             Manifest.permission.READ_CONTACTS,
                             Manifest.permission.ACCESS_FINE_LOCATION,
                             Manifest.permission.ACCESS_COARSE_LOCATION,
-                            Manifest.permission.RECORD_AUDIO
+                            Manifest.permission.RECORD_AUDIO,
+                            Manifest.permission.CAMERA,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                            Manifest.permission.READ_CALENDAR,
+                            Manifest.permission.CALL_PHONE
                         )
                     )
                 },
@@ -327,7 +441,7 @@ fun MainScreen() {
 
             // 3. Tarjeta RECORD_AUDIO
             PermissionCard(
-                featureTitle = "3. Memoria de Voz (3s)",
+                featureTitle = "3. Memoria de Voz (4s)",
                 permissionName = "RECORD_AUDIO",
                 icon = Icons.Default.Mic,
                 status = audioStatus,
@@ -380,6 +494,93 @@ fun MainScreen() {
                 }
             )
 
+            PermissionCard(
+                featureTitle = "4. Foto de Evidencia",
+                permissionName = "CAMERA",
+                icon = Icons.Default.CameraAlt,
+                status = cameraStatus,
+                resultText = cameraResult,
+                onRequestPermission = { handlePermissionRequest(Manifest.permission.CAMERA) },
+                onOpenSettings = openAppSettings,
+                onExecuteAction = {
+                    if (CameraHelper.isCameraPermissionGranted(context)) {
+                        try {
+                            takePictureLauncher.launch(null)
+                        } catch (e: Exception) {
+                            cameraResult = "No se pudo abrir la cámara: ${e.localizedMessage}"
+                        }
+                    } else {
+                        cameraResult = "Permiso CAMERA no otorgado"
+                    }
+                },
+                actionButtonText = "Tomar Foto"
+            )
+
+            capturedPhoto?.let { photo ->
+                if (cameraStatus == PermissionStatus.GRANTED) {
+                    Image(
+                        bitmap = photo.asImageBitmap(),
+                        contentDescription = "Foto capturada",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                }
+            }
+
+            PermissionCard(
+                featureTitle = "5. Recordatorio de Nota",
+                permissionName = "POST_NOTIFICATIONS",
+                icon = Icons.Default.Notifications,
+                status = notificationsStatus,
+                resultText = notificationsResult,
+                onRequestPermission = { handlePermissionRequest(Manifest.permission.POST_NOTIFICATIONS) },
+                onOpenSettings = openAppSettings,
+                onExecuteAction = {
+                    notificationsResult = NotificationHelper.sendMemoReminder(context, memoText)
+                },
+                actionButtonText = "Enviar Recordatorio"
+            )
+
+            PermissionCard(
+                featureTitle = "6. Evento del Calendario",
+                permissionName = "READ_CALENDAR",
+                icon = Icons.Default.CalendarMonth,
+                status = calendarStatus,
+                resultText = calendarResult,
+                onRequestPermission = { handlePermissionRequest(Manifest.permission.READ_CALENDAR) },
+                onOpenSettings = openAppSettings,
+                onExecuteAction = {
+                    calendarResult = CalendarHelper.getNextEvent(context)
+                },
+                actionButtonText = "Obtener Evento"
+            )
+
+            OutlinedTextField(
+                value = phoneNumber,
+                onValueChange = { phoneNumber = it },
+                label = { Text("Número de Teléfono") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
+            )
+
+            PermissionCard(
+                featureTitle = "7. Llamada de Contexto",
+                permissionName = "CALL_PHONE",
+                icon = Icons.Default.Call,
+                status = callStatus,
+                resultText = callResult,
+                onRequestPermission = { handlePermissionRequest(Manifest.permission.CALL_PHONE) },
+                onOpenSettings = openAppSettings,
+                onExecuteAction = {
+                    callResult = CallHelper.callNumber(context, phoneNumber)
+                },
+                actionButtonText = "Llamar"
+            )
+
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
@@ -395,13 +596,7 @@ fun MainScreen() {
                 Button(
                     onClick = {
                         activeRationalePermission = null
-                        when (permission) {
-                            Manifest.permission.READ_CONTACTS -> requestContactsLauncher.launch(Manifest.permission.READ_CONTACTS)
-                            Manifest.permission.ACCESS_FINE_LOCATION -> requestLocationLauncher.launch(
-                                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-                            )
-                            Manifest.permission.RECORD_AUDIO -> requestAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
+                        launchPermissionRequest(permission)
                     }
                 ) {
                     Text("Entendido, Solicitar")
